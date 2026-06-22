@@ -1,0 +1,2 @@
+[console_scripts]
+graph-rrsp-toolkit = graph_rrsp_toolkit.main:main
