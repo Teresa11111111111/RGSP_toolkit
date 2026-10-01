@@ -1,0 +1,10 @@
+{
+  "qubits": 2,
+  "source_graph_edges": [],
+  "clients": [{"local_angles_rad": [0.7853981633974483, 1.5707963267948966]}],
+  "channels": [{
+    "model": "measured",
+    "intensity_efficiencies": [0.9, 0.7, 0.6, 0.4],
+    "phases_rad": [0.1, -0.2, 0.05, 0.3]
+  }]
+}

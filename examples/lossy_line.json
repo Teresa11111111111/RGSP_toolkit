@@ -1,0 +1,15 @@
+{
+  "qubits": 3,
+  "source_graph_edges": [[0, 1], [1, 2]],
+  "clients": [{
+    "local_angles_rad": [0, 0.7853981633974483, 1.5707963267948966],
+    "hiding_angles_rad": [0.7853981633974483, 2.356194490192345, 0],
+    "z_bits": [1, 0, 1]
+  }],
+  "channels": [{"model": "hamming", "eta0": 0.96, "eta1": 0.8, "common": 0.7}],
+  "herald_bits": [0, 1, 0],
+  "measurement": {
+    "adapted_angles_rad": [0, 0.7853981633974483, -0.7853981633974483],
+    "outcome_mask_bits": [1, 0, 1]
+  }
+}

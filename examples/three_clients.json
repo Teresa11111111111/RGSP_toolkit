@@ -1,0 +1,19 @@
+{
+  "qubits": 3,
+  "source_graph_edges": [[0, 1], [1, 2]],
+  "clients": [
+    {"local_angles_rad": [0, 0.7853981633974483, 0],
+     "hiding_angles_rad": [0.7853981633974483, 0, 1.5707963267948966], "z_bits": [1, 0, 0]},
+    {"graph_toggle_edges": [[0, 1], [0, 2]],
+     "local_angles_rad": [0, 0, 0.7853981633974483],
+     "hiding_angles_rad": [0, 2.356194490192345, 0], "z_bits": [0, 1, 0]},
+    {"graph_toggle_edges": [[1, 2]],
+     "hiding_angles_rad": [1.5707963267948966, 0.7853981633974483, 0], "z_bits": [0, 0, 1]}
+  ],
+  "channels": [
+    {"model": "hamming", "eta0": 0.97, "eta1": 0.85, "common": 0.9},
+    {"model": "hamming", "eta0": 0.99, "eta1": 0.92, "common": 0.8}
+  ],
+  "herald_bits": [1, 0, 1],
+  "measurement": {"adapted_angles_rad": [0, 0, 0], "outcome_mask_bits": [0, 1, 1]}
+}
