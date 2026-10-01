@@ -3,21 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "graph-rrsp-toolkit"
-version = "1.0.0"
-description = "Graph-state phase encoding, phase-noise, loss, and R-RSP analysis"
+name = "rgsp-toolkit"
+version = "0.1.0"
+description = "Loss-compensated remote graph-state preparation and multi-client phase programming"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "numpy>=1.24",
-    "matplotlib>=3.7",
-    "networkx>=3.0",
-    "scipy>=1.10",
+license = {text = "MIT"}
+authors = [{name = "Jiawei Cai"}]
+dependencies = ["numpy>=1.24"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Programming Language :: Python :: 3",
 ]
 
-[project.scripts]
-graph-rrsp-toolkit = "graph_rrsp_toolkit.main:main"
+[project.urls]
+Repository = "https://github.com/Teresa11111111111/RGSP_toolkit"
 
-[tool.setuptools]
-packages = ["graph_rrsp_toolkit"]
-package-dir = {graph_rrsp_toolkit = "."}
+[project.scripts]
+rgsp = "rgsp_toolkit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

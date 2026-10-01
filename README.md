@@ -1,317 +1,182 @@
-# Remote Graph State Preparation(RGSP) Toolkit
+# RGSP Toolkit
 
-Research software for GRSP.
-The implementation covers:
+A small experimental calculator for **loss-compensated remote preparation of
+phase-rotated graph states and equatorial product states**. It turns a graph,
+local angles and calibrated channel transmissions into normalized source
+coefficients, per-mode phase settings, a private encryption-angle vector and
+optional classical measurement instructions.
 
-- graph-state phase encoding and controlled-Z reference states;
-- line, star, clique, and brickwork graph topologies;
-- independent and cumulative Gaussian phase noise;
-- Monte Carlo and analytic fidelity predictions;
-- Hamming-weight-dependent loss and inverse-loss compensation;
-- temporal-mode ordering strategies;
-- GRSP success-probability scaling;
-- numerical consistency checks; and
-- publication-quality figure reproduction.
+Multiple clients are supported: **only the source client sets amplitudes**;
+subsequent clients program diagonal phases. Their graph-edge toggles compose by
+XOR and their local rotations add modulo 2π. Each phase-only client can generate
+its own table without knowing the other clients' settings.
 
-## Scientific motivation
+This is a numerical model and programming-table exporter, not a hardware driver
+or a complete blind-computation/security protocol. Version 0.1.0 implements the
+conventions described in [the model notes](docs/model.md).
 
-An encrypted graph state can be written in the computational basis as
+## Install and run
 
-\[
-|\Psi_G\rangle =
-\frac{1}{\sqrt{2^n}}
-\sum_{x\in\{0,1\}^n}
-e^{i\phi_x}|x\rangle,
-\qquad
-\phi_x =
-\sum_i \theta_i x_i +
-\pi\sum_{i<j}A_{ij}x_ix_j.
-\]
+Python 3.10 or later and NumPy are the only runtime requirements. From a terminal:
 
-This representation moves graph connectivity into a structured phase pattern.
-For temporal-mode weights \(w_x=|c_x|^2\), phase-noise fidelity becomes
-
-\[
-F = \left|\sum_x w_x e^{i\delta\phi_x}\right|^2.
-\]
-
-The ideal graph phases cancel, so the modeled transmission-noise fidelity is
-independent of graph topology. The package verifies this identity numerically
-and compares independent residual phase errors with cumulative random-walk
-drift.
-
-## Project structure
-
-```text
-graph_rrsp_toolkit/
-├── __init__.py
-├── graph_states.py
-├── graph_topologies.py
-├── phase_encoding.py
-├── phase_noise.py
-├── amplitude_compensation.py
-├── loss_models.py
-├── rrsp_analysis.py
-├── plotting.py
-├── validation.py
-├── main.py
-├── requirements.txt
-└── README.md
-```
-
-## Installation
-
-Python 3.10 or newer is recommended.
-
-```bash
-git clone <repository-url>
-cd graph_rrsp_toolkit
-python3 -m venv .venv
+```sh
+git clone https://github.com/Teresa11111111111/RGSP_toolkit.git
+cd RGSP_toolkit
+python -m venv .venv
+# macOS/Linux; Windows PowerShell: .venv\Scripts\Activate.ps1
 source .venv/bin/activate
-python -m pip install --upgrade pip
 python -m pip install .
+rgsp compile examples/lossy_line.json --out runs/lossy_line
+rgsp compile examples/product_state.json --out runs/product
+rgsp compile examples/three_clients.json --out runs/multi
 ```
 
-For an editable development installation, replace the final command with
-`python -m pip install -e .`. Installing from `requirements.txt` is also
-supported.
+`python -m rgsp_toolkit` is equivalent to `rgsp`. Output directories must be new;
+previous experimental runs are never overwritten. This project is installable
+from GitHub or the supplied wheel; it has **not** been published to PyPI.
 
-## Validation
+## A minimal configuration
 
-The validation suite checks the phase construction against an explicit
-controlled-Z state, verifies the loss-success formula, confirms topology
-independence, and compares seeded results with notebook reference values.
-
-```bash
-graph-rrsp-toolkit --validation-only
+```json
+{
+  "qubits": 2,
+  "source_graph_edges": [[0, 1]],
+  "clients": [{"local_angles_rad": [0, 1.5707963267948966]}],
+  "channels": [{"model": "measured", "intensity_efficiencies": [0.9, 0.7, 0.6, 0.4]}]
+}
 ```
 
-## Usage examples
+Save as `my_experiment.json` and run
+`rgsp compile my_experiment.json --out runs/my_experiment`.
+Use `"source_graph_edges": []` for a product of equatorial states.
+All angles are **radians**, all efficiencies are **intensity probabilities**,
+qubits are **zero-based**, and mode labels use **qubit 0 first / most significant**.
+For two qubits the modes are `00, 01, 10, 11`. Keep this order on the hardware.
 
-### Construct and verify a graph state
+| Output | Meaning / intended recipient |
+| --- | --- |
+| `source_modes.csv` | Source client: normalized field amplitudes, power fractions, complex coefficients and source phases |
+| `client_02_phases.csv`, … | Each later client: its own phase table only; no amplitude control |
+| `private_corrections.json` | Trusted controller: aggregate hiding vector, logical rotations, herald bits and inverse corrections |
+| `server_measurement_instructions.json` | Optional server payload: corrected measurement angles only |
+| `summary.json` | Predicted success probability, conditioned fidelity and amplitude dynamic range; contains graph information, keep local |
+| `private_input_config.json` | Exact input for reproducing this run, including private angles |
+
+Do not send the entire output directory to an untrusted server. The source table
+already includes client 1's phase update and pre-cancels calibrated channel phase;
+do **not** apply that client's update a second time. CSV bitstrings should be
+imported as text in spreadsheets to preserve leading zeros.
+
+## Multiple clients and local hiding
+
+See [three_clients.json](examples/three_clients.json). `source_graph_edges` is the
+initial graph. Every client's `graph_toggle_edges` is a **change**, not the final
+graph: applying the same edge twice cancels it. To choose a final graph, use the
+symmetric difference of its edge set and the initial graph as the total toggle.
+Local logical rotations, hiding angles and optional `z_bits` are separate inputs.
+
+A client can generate its update using only its own configuration:
+
+```sh
+rgsp client examples/local_client.json --out runs/client_2
+rgsp random-mask --qubits 3 --out runs/fresh_mask
+```
+
+The mask command uses operating-system randomness. Copy the generated fields
+into that client's private config. The examples use **fixed demonstration masks**;
+they are not secret and must not be reused for a private experiment. Local
+mask generation is not itself a proof of blindness or collusion resistance.
+The central `compile` command sees all supplied masks; use it only in a trusted
+integration context. `client` permits local table generation without aggregation.
+
+## Classical corrections
+
+For bitwise Hadamard erasure outcome `m`, the memory has a local `Z^m` byproduct.
+The private vector `encryption_angles_rad` contains only the sum of clients'
+hiding angles and π times their `z_bits`; `preparation_angles_rad` also includes
+intentional logical rotations.
+
+The optional measurement block supplies **already-adapted** angles `phi_prime`
+relative to the **unrotated final graph** and fresh outcome-mask bits `r`:
+
+```json
+"herald_bits": [0, 1],
+"measurement": {
+  "adapted_angles_rad": [0, 0.7853981633974483],
+  "outcome_mask_bits": [1, 0]
+}
+```
+
+The server receives `delta = phi_prime + preparation_angle + pi*m + pi*r (mod 2*pi)`.
+Decode its outcomes with `decode_outcomes(server_bits, r)`. The software does not
+infer a computation's flow, measurement order or adaptive dependencies. For an
+adaptive computation, call the Python helper as each adapted angle becomes
+known; the batch example is not a general MBQC compiler. See
+[the conventions and derivation](docs/model.md#measurement-conventions).
+
+## Python API
 
 ```python
-import numpy as np
+from rgsp_toolkit import Client, prepare, hamming_efficiencies
 
-from graph_rrsp_toolkit.graph_states import (
-    controlled_z_graph_state,
-    graph_phase_state,
-    pure_state_fidelity,
+plan = prepare(
+    3,
+    source_graph_edges=[(0, 1), (1, 2)],
+    clients=[Client(), Client(graph_toggle_edges=[(0, 1), (0, 2)])],
+    intensity_efficiencies=hamming_efficiencies(3, eta0=0.96, eta1=0.8, common=0.7),
 )
-from graph_rrsp_toolkit.graph_topologies import brickwork_adjacency
-
-qubit_count = 6
-local_angles = np.random.default_rng(42).uniform(
-    0.0,
-    2.0 * np.pi,
-    qubit_count,
-)
-adjacency = brickwork_adjacency(qubit_count)
-
-phase_state = graph_phase_state(local_angles, adjacency)
-reference_state = controlled_z_graph_state(local_angles, adjacency)
-
-print(pure_state_fidelity(phase_state, reference_state))
+print(plan.input_amplitudes)
+print(plan.source_phases_rad)
+print(plan.client_updates_rad[1])
+print(plan.encryption_angles_rad)  # private
 ```
 
-### Compare Monte Carlo data with the independent-noise formula
+Run `python examples/python_api.py` for a complete example.
+See [configuration reference](docs/configuration.md) and [validation](docs/validation.md).
 
-```python
-import numpy as np
+## Model boundaries
 
-from graph_rrsp_toolkit.graph_topologies import line_adjacency
-from graph_rrsp_toolkit.phase_encoding import phase_values
-from graph_rrsp_toolkit.phase_noise import (
-    independent_average_fidelity,
-    phase_noise_fidelity_statistics,
-)
+- The target family is `prod_i diag(1, exp(i*theta_i)) |G>`: simple undirected graph
+  states, including equatorial product states. Arbitrary Bloch polar amplitudes
+  and non-diagonal/noisy channels are not implemented.
+- The channel is calibrated diagonal attenuation and deterministic phase.
+  Stochastic phase noise, dark counts, memory errors and drift require a separate model.
+- Compensation restores the **conditioned** state; it does not undo loss events.
+  Total success probability and a selected detector outcome probability are separate.
+- The source must know the whole path's intensity calibration. Unknown future loss
+  cannot be compensated by phase-only clients. Inputs with any zero transmission
+  are rejected rather than silently dropping a mode.
+- Phase and amplitude settings are ideal normalized targets. Convert them to
+  modulator voltages with your own calibration and check the exported dynamic range.
+- Explicit enumeration is limited to 1–16 qubits (`2**n` modes), independent of the
+  number of clients. Larger problems need another representation.
 
-qubit_count = 6
-local_angles = np.random.default_rng(42).uniform(
-    0.0,
-    2.0 * np.pi,
-    qubit_count,
-)
-_, phases = phase_values(local_angles, line_adjacency(qubit_count))
-noise_scales = np.linspace(0.0, 1.0, 21)
+## Development and provenance
 
-statistics = phase_noise_fidelity_statistics(
-    phases,
-    noise_scales,
-    noise_model="independent",
-    sample_count=500,
-    seed=123,
-)
-analytic = np.array(
-    [
-        independent_average_fidelity(qubit_count, noise_scale)
-        for noise_scale in noise_scales
-    ]
-)
+```sh
+python -m pip install -e .
+python -m unittest discover -s tests -v
+python -m pip install build
+python -m build
 ```
 
-### Evaluate loss compensation and GRSP probability
+The implementation follows *High-Fidelity Remote Graph State Preparation for
+Blind Quantum Computation*, Jiawei Cai, Rex Fleur, Benedikt Tissot, Wolfgang
+Löffler and Tzula B. Propp, author manuscript (V3): Appendices A, B, D, E and H.
+The manuscript PDF is not redistributed. Measurement masking conventions also
+follow [Broadbent, Fitzsimons and Kashefi, arXiv:0807.4154](https://arxiv.org/abs/0807.4154).
 
-```python
-from graph_rrsp_toolkit.amplitude_compensation import (
-    loss_compensated_amplitudes,
-)
-from graph_rrsp_toolkit.loss_models import (
-    efficiencies_by_bitstring,
-)
-from graph_rrsp_toolkit.rrsp_analysis import rrsp_success_probability
+The previous paper-plotting implementation is preserved in
+[`legacy/paper_toolkit/`](legacy/paper_toolkit/), excluded from the installed package.
+Older root-level plotting modules are retained for provenance and are not part
+of the new installation. Original build products remain in Git history. The original local
+paper and figure workspace is unchanged.
 
-efficiencies = efficiencies_by_bitstring(
-    qubit_count=6,
-    transmission_efficiency=0.8,
-    detector_efficiency=0.9,
-    one_efficiency=0.3,
-    zero_efficiency=0.95,
-)
-amplitudes = loss_compensated_amplitudes(list(efficiencies.values()))
-probability = rrsp_success_probability(
-    qubit_count=6,
-    transmission_efficiency=0.8,
-    detector_efficiency=0.9,
-    one_efficiency=0.3,
-    zero_efficiency=0.95,
-)
-```
+MIT licensed; see [LICENSE](LICENSE).
 
-## Reproducing the thesis figures
+## 中文快速说明
 
-A quick profile exercises every figure pipeline with fewer Monte Carlo
-realizations:
-
-```bash
-graph-rrsp-toolkit \
-    --profile quick \
-    --output-dir results/quick
-```
-
-The thesis profile uses the original notebook sampling settings, including
-500- or 1000-sample sweeps, 2000 samples for the fidelity-gain table, and dense
-ordering curves:
-
-```bash
-graph-rrsp-toolkit \
-    --profile thesis \
-    --output-dir results/thesis
-```
-
-Add `--show` to display the figures after saving. Add `--timestamped` to retain
-multiple runs without overwriting files.
-
-The thesis profile reproduces:
-
-- one graph visualization for each supported topology;
-- independent phase-noise curves and analytic predictions;
-- topology comparisons at fixed graph size;
-- analytic and Monte Carlo qubit-count sweeps;
-- independent/cumulative graph comparisons with uniform and compensated
-  amplitudes;
-- weighted-amplitude scaling for natural and high-Hamming-first ordering;
-- Hamming-class weight distributions;
-- ordering comparisons for \(n=3,\ldots,8\);
-- fidelity gain from loss compensation; and
-- final \(n=6\) and \(n=12\) phase-noise comparisons.
-
-## Module descriptions
-
-| Module | Responsibility |
-|---|---|
-| `graph_states.py` | State vectors, tensor products, normalization, graph-state construction, and pure-state fidelity |
-| `graph_topologies.py` | Line, star, clique, and brickwork adjacency matrices plus NetworkX conversion |
-| `phase_encoding.py` | Computational-basis bitstrings, \(\phi_x\), ordered phase arrays, and phase decomposition |
-| `phase_noise.py` | Independent/cumulative noise, Monte Carlo statistics, analytic fidelity, and weight autocorrelation |
-| `amplitude_compensation.py` | Inverse-loss amplitudes, uniform amplitudes, Hamming ordering, and class averages |
-| `loss_models.py` | Mode efficiencies and Hamming-weight-dependent loss |
-| `rrsp_analysis.py` | Success probabilities, scaling sweeps, fidelity gains, and final comparison data |
-| `plotting.py` | Plot construction and explicit figure saving; no physics simulations |
-| `validation.py` | Numerical identities and regression checks against notebook outputs |
-| `main.py` | Command-line orchestration and full figure reproduction |
-
-## Adjustable parameters
-
-| Parameter | Typical value | Meaning |
-|---|---:|---|
-| `qubit_count` | 3-12 | Number of logical qubits; temporal modes scale as \(2^n\) |
-| `noise_scale` | \(0\) to \(\pi/5\) rad | Standard deviation of phase errors or random-walk increments |
-| `noise_model` | `independent`, `cumulative` | Residual mode noise or accumulated phase drift |
-| `sample_count` | 500-2000 | Monte Carlo realizations per point |
-| `seed` | 42 or 123 | Reproducible random seed |
-| `transmission_efficiency` | 0.8 | Shared optical transmission efficiency \(\eta_t\) |
-| `detector_efficiency` | 0.9 | Detector efficiency \(\eta_d\) |
-| `one_efficiency` | 0.3 or 0.7 | Internal logical-one efficiency \(\eta_1\) |
-| `zero_efficiency` | 0.95 | Internal logical-zero efficiency \(\eta_0\) |
-| `amplitude_mode` | `uniform`, `loss-compensated` | Temporal-mode amplitude strategy |
-| `order_mode` | `natural`, `high-hamming-first` | Temporal-mode ordering strategy |
-
-The default loss-analysis figures use `one_efficiency=0.3`; the phase notebook's
-loss-consistency example uses `one_efficiency=0.7`.
-
-## Renamed function mapping
-
-| Notebook function | Package replacement |
-|---|---|
-| `plus_theta` | `equatorial_plus_state` |
-| `tensor_product` | `tensor_product_state` |
-| `normalize_state` | `normalized_state` |
-| `fidelity` | `pure_state_fidelity` |
-| `compute_phi_single` | `bitstring_phase` |
-| `compute_all_phi` | `phases_by_bitstring` |
-| `compute_all_phi_list` | `phase_values` |
-| `compute_phi_decomposition` | `phase_decomposition_by_bitstring` |
-| `build_phi_state` | `graph_phase_state` |
-| `build_target_state` | `controlled_z_graph_state` |
-| `build_target_state_for_check` | `controlled_z_graph_state` |
-| `build_ideal_pulse` | `pulse_state` |
-| `map_pulse_to_qubit_state` | `normalized_state` |
-| `build_state_from_phi_dict` | `state_from_phase_mapping` |
-| `build_lossy_state` | `weighted_state_from_phase_mapping` |
-| `add_independent_phi_noise` | `phase_error_values` and `noisy_pulse_state` |
-| `apply_fiber_phase_noise_to_pulse` | `noisy_pulse_state` |
-| `noisy_phi_fidelity_single_sample` | `phase_noise_fidelity_sample` |
-| `qubit_fidelity_from_fiber_noise` | `phase_noise_fidelity_sample` |
-| `monte_carlo_phi_noise_fidelity` | `phase_noise_fidelity_statistics` |
-| `monte_carlo_fidelity_vs_delta` | `phase_noise_fidelity_statistics` |
-| `analytic_average_fidelity_phi_noise` | `independent_average_fidelity` |
-| `analytic_independent_average_fidelity` | `independent_average_fidelity` |
-| `analytic_cumulative_average_fidelity` | `cumulative_average_fidelity` |
-| `analytic_independent_weighted_fidelity` | `independent_weighted_fidelity` |
-| `analytic_cumulative_weighted_fidelity` | `cumulative_weighted_fidelity` |
-| `iid_fidelity_curve_from_delta` | `independent_fidelity_curve` |
-| `cumulative_fidelity_curve_from_delta` | `cumulative_fidelity_curve` |
-| `autocorrelation_by_lag` | `weight_autocorrelation` |
-| `line_graph` | `line_adjacency` |
-| `star_graph` | `star_adjacency` |
-| `clique_graph` | `clique_adjacency` |
-| `brickwork_graph` | `brickwork_adjacency` |
-| `visualize_graph` | `graph_figure` |
-| `generate_eta_dict` | `efficiencies_by_bitstring` |
-| `generate_eta_list` | `efficiency_values` |
-| `compute_coefficients` | `compensation_coefficients` |
-| `loss_compensated_amplitudes` | `loss_compensated_amplitudes` |
-| `uniform_amplitudes` | `uniform_amplitudes` |
-| `reorder_by_high_hamming_first` | `high_hamming_first_order` |
-| `no_reorder` | `unchanged_mode_order` |
-| `reorder_weights_highest_first` | `descending_weights` |
-| `get_loss_compensated_weights_for_n` | `mode_weights(..., "loss-compensated")` |
-| `get_uniform_weights_for_n` | `mode_weights(..., "uniform")` |
-| `compute_mean_fidelity_for_setting` | `fidelity_for_setting` |
-| `rrsp_success_probability` | `rrsp_success_probability` |
-| `save_current_plot` | `saved_figure_path` |
-| `sanity_check` | `phase_construction_fidelity` |
-| notebook plotting functions | corresponding `*_figure` functions in `plotting.py` |
-| notebook execution blocks | `python -m graph_rrsp_toolkit.main` |
-
-## Numerical behavior
-
-- Bitstrings retain the notebooks' lexicographic ordering.
-- The graph phase uses the same upper-triangular edge sum
-  \(\pi\sum_{i<j}A_{ij}x_ix_j\).
-- Monte Carlo sweeps use one seeded NumPy generator across each noise sweep.
-- Population standard deviation (`numpy.std` with its default settings) is
-  retained.
-- Importing the package does not create directories, save files, show plots, or
-  alter NumPy's global random state.
+输入目标图（从 0 编号）、局域旋转、各光学模式的强度透射率；输出归一化振幅、
+相位设置和私有加密角度向量。只有第一个客户端调振幅，其他客户端仅调相位，
+边的增删按 XOR 合成。空图对应赤道面乘积态。`runs/` 内含私有信息，不能整目录发给服务器。
+所有示例已可直接运行，详见以上命令；示例中的固定隐藏角度仅供演示。
